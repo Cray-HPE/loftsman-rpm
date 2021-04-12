@@ -1,4 +1,4 @@
-files = loftsman helm
+files = loftsman helm LICENSE
 
 all: $(files)
 
@@ -8,8 +8,8 @@ loftsman:
 helm:
 	./hack/get-helm.sh
 
-.version: loftsman
-	{ ./loftsman --version | awk '{print $$3}'; [[ -z "$${BUILD_NUMBER}" ]] || echo "$${BUILD_NUMBER}"; } | paste -sd . > $@
+LICENSE:
+	wget -q https://raw.githubusercontent.com/Cray-HPE/loftsman/main/LICENSE
 
 .PHONY: clean
 
