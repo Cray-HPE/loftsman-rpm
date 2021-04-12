@@ -9,7 +9,7 @@ helm:
 	./hack/get-helm.sh
 
 LICENSE:
-	wget -q https://raw.githubusercontent.com/Cray-HPE/loftsman/main/LICENSE
+	./hack/get-license.sh
 
 .PHONY: clean
 
