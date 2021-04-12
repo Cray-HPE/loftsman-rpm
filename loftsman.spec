@@ -1,7 +1,7 @@
 Name:      loftsman
 License:   MIT License
 Summary:   Loftsman CLI
-Version:   %({ ./loftsman --version | awk '{print $3}'; [[ -z "${BUILD_NUMBER}" ]] || echo "${BUILD_NUMBER}"; } | paste -sd .)
+Version:   %(./loftsman --version | awk '{print $3}' | tr '-' '~')
 URL:       https://github.com/Cray-HPE/loftsman
 Release:   %(echo ${BUILD_METADATA})
 Vendor:    Cray/HPE
