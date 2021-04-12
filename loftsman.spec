@@ -1,11 +1,11 @@
 Name:      loftsman
 License:   MIT License
 Summary:   Loftsman CLI
-Version:   %(cat ./.version)
-URL:       https://www.cray.com
+Version:   %({ ./loftsman --version | awk '{print $$3}'; [[ -z "$${BUILD_NUMBER}" ]] || echo "$${BUILD_NUMBER}"; } | paste -sd .)
+URL:       https://github.com/Cray-HPE/loftsman
 Release:   %(echo ${BUILD_METADATA})
 Vendor:    Cray/HPE
-Group:     Cloud
+Group:     CSM
 Source:    %{name}-%{version}.tar.gz
 
 BuildRequires:  gcc
