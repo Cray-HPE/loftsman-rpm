@@ -3,7 +3,7 @@ files = loftsman helm LICENSE
 all: $(files)
 
 loftsman:
-	./hack/get-loftsman.sh 1.0.4-beta1
+	./hack/get-loftsman.sh 1.1.0
 
 helm:
 	./hack/get-helm.sh
