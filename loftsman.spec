@@ -8,9 +8,6 @@ Vendor:    Cray/HPE
 Group:     CSM
 Provides:  loftsman = %{version}
 Source0:   download.sh
-BuildRequires: coreutils
-BuildRequires: jq-1.6
-BuildRequires: wget
 
 %description
 Define, organize, and ship your Kubernetes workloads with Helm charts easily
