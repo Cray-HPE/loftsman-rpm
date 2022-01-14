@@ -1,17 +1,19 @@
-files = loftsman helm LICENSE
+BUILD_METADATA ?= 1~development~$(shell git rev-parse --short HEAD)
+export BUILD_METADATA
 
-all: $(files)
+ifneq ($(shell uname -s),Linux)
+RPMBUILD_FLAGS ?= --nodeps
+endif
 
-loftsman:
-	./hack/get-loftsman.sh 1.2.0
+all: rpm
 
-helm:
-	./hack/get-helm.sh
-
-LICENSE:
-	./hack/get-license.sh
+rpm: loftsman.spec download.sh
+	rpmbuild $(RPMBUILD_FLAGS) \
+	    --define "_topdir $(CURDIR)/dist" \
+	    --define "_sourcedir $(CURDIR)" \
+	    -ba loftsman.spec
 
 .PHONY: clean
 
 clean:
-	$(RM) $(files)
+	$(RM) -r dist

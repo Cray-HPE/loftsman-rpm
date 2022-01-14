@@ -1,0 +1,35 @@
+@Library('csm-shared-library') _
+
+pipeline {
+    agent {
+        label "metal-gcp-builder"
+    }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: "10"))
+        timestamps()
+    }
+
+    environment {
+        NAME = "loftsman"
+        DESCRIPTION = "Loftsman RPM"
+        IS_STABLE = IS_STABLE = getBuildIsStable()
+        BUILD_METADATA = getRpmRevision(isStable: isStable)
+    }
+
+    stages {
+        stage("Build RPM") {
+            steps {
+                sh "make rpm"
+            }
+        }
+        stage('Publish ') {
+            steps {
+                script {
+                    publishCsmRpms(component: getRepoName(), pattern: "dist/RPMS/x86_64/loftsman-*.rpm", arch: "x86_64", isStable: isStable)
+                    publishCsmRpms(component: getRepoName(), pattern: "dist/SRPMS/loftsman-*.src.rpm", arch: "src", isStable: isStable)
+                }
+            }
+        }
+    }
+}

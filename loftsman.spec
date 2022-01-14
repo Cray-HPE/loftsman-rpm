@@ -1,20 +1,23 @@
 Name:      loftsman
 License:   MIT License
 Summary:   Loftsman CLI
-Version:   %(./loftsman --version | awk '{print $3}' | tr '-' '~')
+Version:   1.2.0
 URL:       https://github.com/Cray-HPE/loftsman
 Release:   %(echo ${BUILD_METADATA})
 Vendor:    Cray/HPE
 Group:     CSM
-Source:    %{name}-%{version}.tar.gz
-
-BuildRequires:  gcc
+Provides:  loftsman = %{version}
+Source0:   download.sh
+BuildRequires: coreutils
+BuildRequires: jq-1.6
+BuildRequires: wget
 
 %description
 Define, organize, and ship your Kubernetes workloads with Helm charts easily
 
-%prep
-%setup -n %{name}-%{version} -q
+%build
+cp %{SOURCE0} ./
+LOFTSMAN_VERSION=%{version} ./download.sh
 
 %install
 install -d %{buildroot}%{_bindir}
@@ -26,5 +29,3 @@ install -p -m 0755 helm %{buildroot}%{_bindir}/helm
 %doc LICENSE
 %{_bindir}/loftsman
 %{_bindir}/helm
-
-%changelog
