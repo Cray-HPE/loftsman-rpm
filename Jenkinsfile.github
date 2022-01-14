@@ -13,8 +13,8 @@ pipeline {
     environment {
         NAME = "loftsman"
         DESCRIPTION = "Loftsman RPM"
-        IS_STABLE = IS_STABLE = getBuildIsStable()
-        BUILD_METADATA = getRpmRevision(isStable: isStable)
+        IS_STABLE = getBuildIsStable()
+        BUILD_METADATA = getRpmRevision(isStable: env.IS_STABLE)
     }
 
     stages {
@@ -26,8 +26,8 @@ pipeline {
         stage('Publish ') {
             steps {
                 script {
-                    publishCsmRpms(component: getRepoName(), pattern: "dist/RPMS/x86_64/loftsman-*.rpm", arch: "x86_64", isStable: isStable)
-                    publishCsmRpms(component: getRepoName(), pattern: "dist/SRPMS/loftsman-*.src.rpm", arch: "src", isStable: isStable)
+                    publishCsmRpms(component: getRepoName(), pattern: "dist/RPMS/x86_64/loftsman-*.rpm", arch: "x86_64", isStable: env.IS_STABLE)
+                    publishCsmRpms(component: getRepoName(), pattern: "dist/SRPMS/loftsman-*.src.rpm", arch: "src", isStable: env.IS_STABLE)
                 }
             }
         }
