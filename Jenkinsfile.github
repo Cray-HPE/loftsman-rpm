@@ -1,33 +1,166 @@
+/*
+ *
+ *  MIT License
+ *
+ *  (C) Copyright 2022-2023 Hewlett Packard Enterprise Development LP
+ *
+ *  Permission is hereby granted, free of charge, to any person obtaining a
+ *  copy of this software and associated documentation files (the "Software"),
+ *  to deal in the Software without restriction, including without limitation
+ *  the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ *  and/or sell copies of the Software, and to permit persons to whom the
+ *  Software is furnished to do so, subject to the following conditions:
+ *
+ *  The above copyright notice and this permission notice shall be included
+ *  in all copies or substantial portions of the Software.
+ *
+ *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+ *  THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+ *  OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ *  ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+ *  OTHER DEALINGS IN THE SOFTWARE.
+ *
+ */
 @Library('csm-shared-library') _
 
+// Disable pr-merge builds; not used.
+if (env.BRANCH_NAME ==~ ~"^PR-\\d+") {
+    currentBuild.result = 'SUCCESS'
+    echo "Pull-Request builds are skipped."
+    return
+} else if (env.BRANCH_NAME ==~ ~"^dependabot/github_actions") {
+    currentBuild.result = 'SUCCESS'
+    echo "Dependabot GitHub action builds are skipped."
+    return
+}
+
+// Only main or maint/* branches are stable.
+def promotionToken = ~"(main|release\\/.*)"
+def isStable = env.BRANCH_NAME ==~ promotionToken ? true : false
+def sleImage = 'artifactory.algol60.net/csm-docker/stable/csm-docker-sle'
 pipeline {
+
     agent {
         label "metal-gcp-builder"
     }
 
     options {
         buildDiscarder(logRotator(numToKeepStr: "10"))
+        disableConcurrentBuilds()
+        timeout(time: 20, unit: 'MINUTES')
         timestamps()
     }
 
     environment {
-        NAME = "loftsman"
-        DESCRIPTION = "Loftsman RPM"
-        IS_STABLE = getBuildIsStable()
-        BUILD_METADATA = getRpmRevision(isStable: env.IS_STABLE)
+        NAME = 'loftsman'
+        GITHUB_TOKEN = getGitHubToken()
+        PRIMARY_NODE = "${env.NODE_NAME}"
     }
 
     stages {
-        stage("Build RPM") {
-            steps {
-                sh "make rpm"
-            }
-        }
-        stage('Publish ') {
-            steps {
-                script {
-                    publishCsmRpms(component: getRepoName(), pattern: "dist/RPMS/x86_64/loftsman-*.rpm", arch: "x86_64", isStable: env.IS_STABLE)
-                    publishCsmRpms(component: getRepoName(), pattern: "dist/SRPMS/loftsman-*.src.rpm", arch: "src", isStable: env.IS_STABLE)
+
+        stage('Build & Publish') {
+
+            matrix {
+
+                environment {
+                    DOCKER_ARCH = sh(returnStdout: true, script: "[ ${ARCH} == 'x86_64' ] && echo -n 'amd64' || echo -n 'arm64'")
+                    BUILD_DIR = "${env.WORKSPACE}/dist/rpmbuild/${ARCH}/${SLE_VERSION}"
+                }
+
+                axes {
+                    axis {
+                        name 'ARCH'
+                        values 'x86_64'
+                    }
+                    axis {
+                        name 'SLE_VERSION'
+                        values '15.5', '15.4', '15.3'
+                    }
+                }
+
+                stages {
+
+                    stage('Build: setup') {
+                        steps {
+                            lock('docker-image-pull') {
+                                sh "docker pull --platform linux/${DOCKER_ARCH} ${sleImage}:${SLE_VERSION}"
+                                sh "docker tag ${sleImage}:${SLE_VERSION} ${sleImage}:${SLE_VERSION}-${DOCKER_ARCH}"
+                            }
+                        }
+                    }
+
+                    stage('Prepare: RPMs') {
+
+                        agent {
+                            docker {
+                                label "${PRIMARY_NODE}"
+                                reuseNode true
+                                args "-v /home/jenkins/.ssh:/home/jenkins/.ssh --platform linux/${DOCKER_ARCH}"
+                                image "${sleImage}:${SLE_VERSION}-${DOCKER_ARCH}"
+                            }
+                        }
+
+                        steps {
+                            sh "make prepare"
+                            dir("${env.BUILD_DIR}/SPECS/") {
+                                runLibraryScript("addRpmMetaData.sh", "${env.NAME}.spec")
+                            }
+                            sh "make download"
+                        }
+                    }
+
+                    stage('Build: RPMs') {
+
+                        agent {
+                            docker {
+                                label "${PRIMARY_NODE}"
+                                reuseNode true
+                                args "-v /home/jenkins/.ssh:/home/jenkins/.ssh --platform linux/${DOCKER_ARCH}"
+                                image "${sleImage}:${SLE_VERSION}-${DOCKER_ARCH}"
+                            }
+                        }
+
+                        steps {
+                            sh "make rpm"
+                        }
+                    }
+
+                    stage('Publish: RPMs') {
+
+                        agent {
+                            docker {
+                                label "${PRIMARY_NODE}"
+                                reuseNode true
+                                args "-v /home/jenkins/.ssh:/home/jenkins/.ssh --platform linux/${DOCKER_ARCH}"
+                                image "${sleImage}:${SLE_VERSION}-${DOCKER_ARCH}"
+                            }
+                        }
+                        steps {
+                            script {
+                                def sleVersion = sh(returnStdout: true, script: 'awk -F= \'/VERSION_ID/{gsub(/["]/,""); print \$NF}\' /etc/os-release').trim()
+                                def sles_version_parts = "${sleVersion}".tokenize('.')
+                                def sles_major = "${sles_version_parts[0]}"
+                                def sles_minor = "${sles_version_parts[1]}"
+                                publishCsmRpms(
+                                        arch: "${ARCH}",
+                                        component: "${env.NAME}",
+                                        isStable: isStable,
+                                        os: "sle-${sles_major}sp${sles_minor}",
+                                        pattern: "dist/rpmbuild/${ARCH}/${SLE_VERSION}/RPMS/${ARCH}/*.rpm"
+                                )
+                                publishCsmRpms(
+                                        arch: "src",
+                                        component: "${env.NAME}",
+                                        isStable: isStable,
+                                        os: "sle-${sles_major}sp${sles_minor}",
+                                        pattern: "dist/rpmbuild/${ARCH}/${SLE_VERSION}/SRPMS/*.rpm"
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
