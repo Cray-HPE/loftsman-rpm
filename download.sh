@@ -1,62 +1,108 @@
 #!/usr/bin/env bash
-
+#
+# MIT License
+#
+# (C) Copyright 2020-2023 Hewlett Packard Enterprise Development LP
+#
+# Permission is hereby granted, free of charge, to any person obtaining a
+# copy of this software and associated documentation files (the "Software"),
+# to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software, and to permit persons to whom the
+# Software is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included
+# in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+# OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+# ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+# OTHER DEALINGS IN THE SOFTWARE.
+#
 set -euo pipefail
 
-PLATFORM_OS="$(uname -s | tr A-Z a-z)"
-PLATFORM_ARCH="$(uname -m | sed -e 's/x86_64/amd64/')"
-PLATFORM="${PLATFORM_OS}-${PLATFORM_ARCH}"
-
-function get-loftsman() {
-    local version
-
-    if [[ $# -gt 0 ]]; then
-        version="$1"
-    else
-        echo >&2 "Detecting latest Loftsman version"
-        version="$(wget -q --header 'Accept: application/vnd.github.v3+json' 'https://api.github.com/repos/Cray-HPE/loftsman/releases/latest' -O - | jq -r '.tag_name')"
-    fi
-
-    echo >&2 "Getting Loftsman ${version} download URL"
-    url="$(wget -q --header 'Accept: application/vnd.github.v3+json' "https://api.github.com/repos/Cray-HPE/loftsman/releases/tags/${version}" -O - | jq -r --arg name "loftsman-${PLATFORM}" '.assets[] | select(.name==$name) | .browser_download_url')"
-    #url="https://github.com/Cray-HPE/loftsman/releases/download/${version}/loftsman-${PLATFORM}"
-
-    echo >&2 "Downloading Loftsman ${version} from ${url}"
-    wget -q "$url" -O loftsman
-    chmod +x loftsman
-}
-
-function get-license() {
-    echo >&2 "Downloading Loftsman license file"
-    wget -q --header 'Accept: application/vnd.github.v3+json' 'https://api.github.com/repos/Cray-HPE/loftsman/license' -O - | jq -r .content | base64 -d > LICENSE
-}
-
-function get-helm() {
-    local version
-
-    if [[ $# -gt 0 ]]; then
-        version="v${1}"
-    else
-        echo >&2 "Detecting latest Helm version"
-        version="$(wget -q --header 'Accept: application/vnd.github.v3+json' 'https://api.github.com/repos/helm/helm/releases/latest' -O - | jq -r '.tag_name')"
-    fi
-
-    local url="https://get.helm.sh/helm-${version}-${PLATFORM}.tar.gz"
-
-    echo >&2 "Downloading Helm ${version} from ${url}"
-    wget -q "$url" -O - | tar -xzO "${PLATFORM}/helm" > helm
-    chmod +x helm
-}
-
-if [[ -v LOFTSMAN_VERSION ]]; then
-    get-loftsman "${LOFTSMAN_VERSION}"
-else
-    get-loftsman
+if [ -z "${PLATFORM_OS}" ]; then
+    PLATFORM_OS="$(uname -s | tr A-Z a-z)"
+fi
+if [ -z "${PLATFORM_ARCH}" ]; then
+    PLATFORM_ARCH="$(uname -m | sed -e 's/x86_64/amd64/')"
 fi
 
-if [[ -v HELM_VERSION ]]; then
-    get-helm "${HELM_VERSION}"
-else
-    get-helm
+trap 'rm -rf ${TEMP_DIR}' EXIT ERR
+
+if [ -z "${ARCH}" ] || [ -z "${NAME}" ] || [ -z "${URL}" ] || [ -z "${VERSION}" ]; then
+    echo >&2 'Please run this script by running "make download"'
+    exit 1
 fi
 
-get-license
+if [ -z "${GITHUB_TOKEN}" ]; then
+    echo >&2 'GITHUB_TOKEN must be defined'
+    exit 1
+fi
+
+if ! command -v curl >/dev/null ; then
+    echo >&2 'Needs curl'
+    exit 1
+fi
+if ! command -v jq >/dev/null ; then
+    echo >&2 'Needs jq'
+    exit 1
+fi
+
+GITHUB_API_VERSION='2022-11-28'
+# ALWAYS RUN THIS SCRIPT BY RUNNING `make download`
+TEMP_DIR=$(mktemp -d)
+
+function download_binary {
+
+    local version
+
+    version=${1:-''}
+    if [ -z "$version" ]; then
+        echo >&2 'No version given'
+        return 1
+    fi
+    mkdir ${TEMP_DIR}/${version}
+
+    RELEASE_JSON=$(curl -f -L \
+        -H "Accept: application/vnd.github+json" \
+        -H "Authorization: Bearer $GITHUB_TOKEN" \
+        -H "X-GitHub-Api-Version: $GITHUB_API_VERSION" \
+        "${URL}/releases?per_page=100" | jq '.[] | select(.tag_name=="'"${version}"'")')
+    RELEASE_ID="$(echo "${RELEASE_JSON}" | jq .id)"
+
+    ASSET_JSON=$(curl -f -L \
+        -H "Accept: application/vnd.github+json" \
+        -H "Authorization: Bearer $GITHUB_TOKEN" \
+        -H "X-GitHub-Api-Version: $GITHUB_API_VERSION" \
+        "${URL}/releases/${RELEASE_ID}/assets?per_page=100" | jq '.[] | select(.name | test("'"${PLATFORM_OS}"'[-_]'"${PLATFORM_ARCH}"'"))')
+
+    IFS=$'\n' read -r -d '' -a ASSET_IDS < <(echo "${ASSET_JSON}" | jq .id; printf '\0')
+    for asset_id in "${ASSET_IDS[@]}"; do
+        asset_name="$(echo $ASSET_JSON | jq -r '. | select(.id=='"${asset_id}"') | .name')"
+
+        curl -f -L \
+           -H "Accept: application/octet-stream" \
+           -H "Authorization: Bearer $GITHUB_TOKEN" \
+           -H "X-GitHub-Api-Version: $GITHUB_API_VERSION" \
+           "${URL}/releases/assets/${asset_id}" \
+           -o "${TEMP_DIR}/${version}/${asset_name}"
+    done
+}
+
+function download_license {
+    curl -f -L \
+        -H "Accept: application/vnd.github+json" \
+        -H "Authorization: Bearer $GITHUB_TOKEN" \
+        'https://api.github.com/repos/Cray-HPE/loftsman/license' \
+        | jq -r .content | base64 -d > "${TEMP_DIR}/LICENSE"
+}
+
+download_binary ${VERSION}
+download_license
+
+mkdir -pv download
+cp -r "${TEMP_DIR}"/* download/
