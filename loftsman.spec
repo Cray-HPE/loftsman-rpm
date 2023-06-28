@@ -28,12 +28,12 @@ Version:   1.2.0
 BuildArch: %(echo $ARCH)
 URL:       https://github.com/Cray-HPE/%{name}
 # MAINTAINERS: Set this to 1 once the version bumps above 1.2.0
-Release:   2
+Release:   3
 Vendor:    Cray/HPE
 Group:     CSM
 Source:    %{name}-%{version}.tar.bz2
 Provides:  %{name} = %{version}
-Requires:  helm >= 3.9.4, helm < 3.9.5
+Requires:  helm >= 3.9.4
 
 %ifarch %ix86
     %global GOARCH 386
