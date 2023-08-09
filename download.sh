@@ -33,7 +33,7 @@ fi
 
 trap 'rm -rf ${TEMP_DIR}' EXIT ERR
 
-if [ -z "${ARCH}" ] || [ -z "${NAME}" ] || [ -z "${URL}" ] || [ -z "${VERSION}" ]; then
+if [ -z "${NAME}" ] || [ -z "${URL}" ] || [ -z "${VERSION}" ]; then
     echo >&2 'Please run this script by running "make download"'
     exit 1
 fi
